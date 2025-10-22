@@ -18,9 +18,14 @@ poetry.lock
 # Type checking
 .pytype/
 
+
+# Ignore Python virtual environment
+vir-env/
+venv/
+.env/
+
 # Other
 *.DS_Store
 .vscode/
 .idea
 *.log
-vir-env/
