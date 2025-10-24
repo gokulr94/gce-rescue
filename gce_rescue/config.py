@@ -28,11 +28,11 @@ config = {
   'startup-script-file': os.path.join(dirname, 'startup-script.txt'),
   'source_guests': {
     'x86_64':[
-      'projects/debian-cloud/global/images/family/debian-11',
+      'projects/ubuntu-os-cloud/global/images/family/ubuntu-minimal-2204-lts',
       'projects/rocky-linux-cloud/global/images/family/rocky-linux-9'
       ],
     'arm64':[
-      'projects/debian-cloud/global/images/family/debian-11-arm64',
+      'projects/ubuntu-os-cloud/global/images/family/ubuntu-minimal-2204-lts-arm64',
       'projects/rocky-linux-cloud/global/images/family/rocky-linux-9-arm64'
     ]
   }

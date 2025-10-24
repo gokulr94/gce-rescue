@@ -47,7 +47,7 @@ def get_instance_info(
 def guess_guest(data: Dict) -> str:
   """Determined which Guest OS Family is being used and select a
   different OS for recovery disk.
-     Default: projects/debian-cloud/global/images/family/debian-11"""
+     Default: projects/ubuntu-os-cloud/global/images/family/ubuntu-minimal-2204-lts"""
 
   guests = get_config('source_guests')
   for disk in data['disks']:
