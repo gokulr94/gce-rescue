@@ -23,3 +23,5 @@ poetry.lock
 .vscode/
 .idea
 *.log
+vir-env/
+
