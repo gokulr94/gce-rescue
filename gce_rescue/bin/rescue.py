@@ -27,52 +27,60 @@ from gce_rescue.utils import read_input, set_logging
 
 def main():
   """ Main script function. """
+  # Process command line arguments and set up configurations.
   parser = process_args()
   args = parser.parse_args()
   set_configs(args)
 
+  # Configure logging for the script.
   set_logging(vm_name=args.name)
 
-  parse_kwargs = {
+  # Prepare arguments for creating the Instance object.
+  instance_kwargs = {
       'zone': args.zone,
       'name': args.name,
   }
-
   if args.project:
-    parse_kwargs['project'] = args.project
+    instance_kwargs['project'] = args.project
 
-  vm = Instance(test_mode=False, **parse_kwargs)
+  # Create an Instance object to interact with the VM.
+  vm = Instance(test_mode=False, **instance_kwargs)
   rescue_on = vm.rescue_mode_status['rescue-mode']
-  if not rescue_on:
-    if not args.force:
-      info = (f'This option will boot the instance {vm.name} in '
-              'RESCUE MODE. \nIf your instance is running it will be rebooted. '
-              '\nDo you want to continue [y/N]: ')
-      read_input(msg=info)
 
-    print('Starting...')
-    # save in the log file current configuration of the VM as backup.
-    logging.info('RESTORE#%s\n', vm.data)
-    action = 'set_rescue_mode'
-    msg = messages.tip_connect_ssh(vm)
-
-  else:
+  # Check if the VM is already in rescue mode.
+  if rescue_on:
+    # If in rescue mode, prepare to restore the original configuration.
     rescue_ts = vm.rescue_mode_status['ts']
     rescue_date = datetime.fromtimestamp(int(rescue_ts))
-
-    if not args.force:
-      info = (f'The instance \"{vm.name}\" is currently configured '
-              f'to boot as rescue mode since {rescue_date}.\nWould you like to'
-              ' restore the original configuration ? [y/N]: ')
-      read_input(msg=info)
-
-    print('Restoring VM...')
+    confirmation_msg = (
+        f'The instance "{vm.name}" is currently configured '
+        f'to boot as rescue mode since {rescue_date}.\nWould you like to'
+        ' restore the original configuration ? [y/N]: ')
+    start_msg = 'Restoring VM...'
     action = 'reset_rescue_mode'
-    has_snapshot = vm.snapshot
-    msg = messages.tip_restore_disk(vm, snapshot=has_snapshot)
+    success_msg = messages.tip_restore_disk(vm, snapshot=vm.snapshot)
+  else:
+    # If not in rescue mode, prepare to enable it.
+    confirmation_msg = (
+        f'This option will boot the instance {vm.name} in '
+        'RESCUE MODE. \nIf your instance is running it will be rebooted. '
+        '\nDo you want to continue [y/N]: ')
+    start_msg = 'Starting...'
+    # Save the current VM configuration as a backup before making changes.
+    logging.info('RESTORE#%s\n', vm.data)
+    action = 'set_rescue_mode'
+    success_msg = messages.tip_connect_ssh(vm)
 
+  # If the --force flag is not used, ask for user confirmation.
+  if not args.force:
+    read_input(msg=confirmation_msg)
+
+  # Execute the chosen action (set or reset rescue mode).
+  print(start_msg)
   call_tasks(vm=vm, action=action)
-  print(msg)
+  print(success_msg)
+
+
 
 
 if __name__ == '__main__':
