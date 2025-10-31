@@ -56,7 +56,7 @@ def rescue_vm(project, zone, vm_name):
     print(f"Rescuing VM: {vm_name}")
 
     # Get VM info
-    print("→ Getting VM info...")
+    print("=> Getting VM info...")
     vm = compute.instances().get(project=project, zone=zone, instance=vm_name).execute()
 
     # Find boot disk
@@ -72,7 +72,7 @@ def rescue_vm(project, zone, vm_name):
     print(f"  Boot disk: {boot_disk['name']}")
 
     # Stop VM
-    print("→ Stopping VM...")
+    print("=> Stopping VM...")
     compute.instances().stop(project=project, zone=zone, instance=vm_name).execute()
 
     # Wait for stop
@@ -86,7 +86,7 @@ def rescue_vm(project, zone, vm_name):
 
     # Create rescue disk
     rescue_disk_name = f"rescue-disk-{timestamp}"
-    print(f"→ Creating rescue disk: {rescue_disk_name}")
+    print(f"=> Creating rescue disk: {rescue_disk_name}")
 
     # Prepare startup script with actual disk name
     startup_script = STARTUP_SCRIPT.replace('DISK_NAME_PLACEHOLDER', boot_disk['name'])
@@ -113,7 +113,7 @@ def rescue_vm(project, zone, vm_name):
     print("  Rescue disk created")
 
     # Detach boot disk
-    print("→ Detaching boot disk...")
+    print("=> Detaching boot disk...")
     compute.instances().detachDisk(
         project=project,
         zone=zone,
@@ -123,7 +123,7 @@ def rescue_vm(project, zone, vm_name):
     time.sleep(3)
 
     # Attach rescue disk as boot
-    print("→ Attaching rescue disk as boot...")
+    print("=> Attaching rescue disk as boot...")
     attach_body = {
         'source': f'projects/{project}/zones/{zone}/disks/{rescue_disk_name}',
         'boot': True,
@@ -138,7 +138,7 @@ def rescue_vm(project, zone, vm_name):
     time.sleep(3)
 
     # Set startup script metadata
-    print("→ Setting startup script...")
+    print("=> Setting startup script...")
     metadata = {
         'items': [
             {'key': 'startup-script', 'value': startup_script},
@@ -154,7 +154,7 @@ def rescue_vm(project, zone, vm_name):
     time.sleep(2)
 
     # Start VM
-    print("→ Starting VM in rescue mode...")
+    print("=> Starting VM in rescue mode...")
     compute.instances().start(project=project, zone=zone, instance=vm_name).execute()
 
     # Wait for start
@@ -165,7 +165,7 @@ def rescue_vm(project, zone, vm_name):
         time.sleep(5)
 
     # Re-attach original disk as secondary
-    print("→ Re-attaching original disk...")
+    print("=> Re-attaching original disk...")
     time.sleep(10)  # Wait for VM to fully boot
 
     attach_body = {
@@ -180,7 +180,7 @@ def rescue_vm(project, zone, vm_name):
         body=attach_body
     ).execute()
 
-    print(f"\n✅ VM is now in rescue mode!")
+    print(f"\n[SUCCESS] VM is now in rescue mode!")
     print(f"   SSH: gcloud compute ssh {vm_name} --zone={zone}")
     print(f"   Original disk will be mounted at: /mnt/sysroot")
 
@@ -193,7 +193,7 @@ def restore_vm(project, zone, vm_name):
     print(f"Restoring VM: {vm_name}")
 
     # Get VM info
-    print("→ Getting VM info...")
+    print("=> Getting VM info...")
     vm = compute.instances().get(project=project, zone=zone, instance=vm_name).execute()
 
     # Find rescue disk and original disk
@@ -218,7 +218,7 @@ def restore_vm(project, zone, vm_name):
     print(f"  Rescue disk: {rescue_disk['name']}")
 
     # Stop VM
-    print("→ Stopping VM...")
+    print("=> Stopping VM...")
     compute.instances().stop(project=project, zone=zone, instance=vm_name).execute()
 
     while True:
@@ -230,7 +230,7 @@ def restore_vm(project, zone, vm_name):
     print("  VM stopped")
 
     # Detach rescue disk
-    print("→ Detaching rescue disk...")
+    print("=> Detaching rescue disk...")
     compute.instances().detachDisk(
         project=project,
         zone=zone,
@@ -240,7 +240,7 @@ def restore_vm(project, zone, vm_name):
     time.sleep(2)
 
     # Detach original disk
-    print("→ Detaching original disk...")
+    print("=> Detaching original disk...")
     compute.instances().detachDisk(
         project=project,
         zone=zone,
@@ -250,7 +250,7 @@ def restore_vm(project, zone, vm_name):
     time.sleep(2)
 
     # Re-attach original disk as boot
-    print("→ Re-attaching original disk as boot...")
+    print("=> Re-attaching original disk as boot...")
     attach_body = {
         'source': f'projects/{project}/zones/{zone}/disks/{original_disk["name"]}',
         'boot': True,
@@ -265,7 +265,7 @@ def restore_vm(project, zone, vm_name):
     time.sleep(3)
 
     # Remove rescue metadata
-    print("→ Removing rescue metadata...")
+    print("=> Removing rescue metadata...")
     vm = compute.instances().get(project=project, zone=zone, instance=vm_name).execute()
     metadata = vm['metadata'].copy()
     metadata['items'] = [item for item in metadata.get('items', [])
@@ -279,7 +279,7 @@ def restore_vm(project, zone, vm_name):
     time.sleep(2)
 
     # Start VM
-    print("→ Starting VM...")
+    print("=> Starting VM...")
     compute.instances().start(project=project, zone=zone, instance=vm_name).execute()
 
     while True:
@@ -291,14 +291,14 @@ def restore_vm(project, zone, vm_name):
     print("  VM started")
 
     # Delete rescue disk
-    print(f"→ Deleting rescue disk: {rescue_disk['name']}...")
+    print(f"=> Deleting rescue disk: {rescue_disk['name']}...")
     compute.disks().delete(
         project=project,
         zone=zone,
         disk=rescue_disk['name']
     ).execute()
 
-    print(f"\n✅ VM restored to normal mode!")
+    print(f"\n[SUCCESS] VM restored to normal mode!")
     print(f"   SSH: gcloud compute ssh {vm_name} --zone={zone}")
 
 
