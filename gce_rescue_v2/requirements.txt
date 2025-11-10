@@ -15,3 +15,6 @@ httplib2>=0.22.0
 
 # YAML Support (for --format=yaml output)
 pyyaml>=6.0.1
+
+# Progress Bar (optional but recommended for better UX)
+tqdm>=4.66.0

@@ -30,6 +30,7 @@ from operations import (
 )
 from orchestration.state import StateTracker
 from orchestration.rollback import RollbackHandler
+from utils.progress import create_progress_tracker
 
 
 class RestoreOrchestrator:
@@ -155,6 +156,17 @@ class RestoreOrchestrator:
             # Get disk info
             self._get_disk_info()
 
+            # Calculate total steps (6 or 7 depending on delete_rescue_disk)
+            total_steps = 7 if self.config.delete_rescue_disk else 6
+
+            # Create progress tracker
+            progress = create_progress_tracker(
+                total_steps=total_steps,
+                desc=f"Restore VM: {self.vm_name}",
+                enabled=True
+            )
+            progress.start()
+
             # Create operations
             stop_vm = StopVMOperation(self.compute, self.project, self.zone, self.logger)
             detach_rescue = DetachDiskOperation(self.compute, self.project, self.zone, self.logger)
@@ -176,62 +188,81 @@ class RestoreOrchestrator:
             }
 
             # Step 1: Stop VM
+            progress.update_step("Stopping VM")
             self._log_info("  Stopping VM...")
             result = stop_vm.execute(vm_name=self.vm_name, timeout=self.config.vm_stop_timeout)
             self.state_tracker.add_operation("Stop VM", result.success, result.message, result.rollback_data)
             if not result.success:
+                progress.finish()
                 self._rollback()
                 return False
             self._log_info(f"  [OK] {result.message}")
+            progress.advance()
 
             # Step 2: Detach rescue disk
+            progress.update_step("Detaching rescue disk")
             self._log_info("  Detaching rescue disk...")
             result = detach_rescue.execute(vm_name=self.vm_name, device_name=self.rescue_device_name)
             self.state_tracker.add_operation("Detach Rescue Disk", result.success, result.message, result.rollback_data)
             if not result.success:
+                progress.finish()
                 self._rollback()
                 return False
             self._log_info(f"  [OK] {result.message}")
+            progress.advance()
 
             # Step 3: Detach original disk
+            progress.update_step("Detaching original disk")
             self._log_info("  Detaching original disk...")
             result = detach_original.execute(vm_name=self.vm_name, device_name=self.original_device_name)
             self.state_tracker.add_operation("Detach Original Disk", result.success, result.message, result.rollback_data)
             if not result.success:
+                progress.finish()
                 self._rollback()
                 return False
             self._log_info(f"  [OK] {result.message}")
+            progress.advance()
 
             # Step 4: Re-attach original disk as boot
+            progress.update_step("Re-attaching original disk as boot")
             self._log_info("  Re-attaching original disk as boot...")
             result = attach_original.execute(vm_name=self.vm_name, disk_name=self.original_disk_name, boot=True)
             self.state_tracker.add_operation("Attach Original Disk", result.success, result.message, result.rollback_data)
             if not result.success:
+                progress.finish()
                 self._rollback()
                 return False
             self._log_info(f"  [OK] {result.message}")
+            progress.advance()
 
             # Step 5: Remove rescue metadata
+            progress.update_step("Removing rescue metadata")
             self._log_info("  Removing rescue metadata...")
             clean_metadata = self._get_clean_metadata()
             result = set_metadata.execute(vm_name=self.vm_name, metadata_items=clean_metadata)
             self.state_tracker.add_operation("Set Metadata", result.success, result.message, result.rollback_data)
             if not result.success:
+                progress.finish()
                 self._rollback()
                 return False
             self._log_info(f"  [OK] {result.message}")
+            progress.advance()
 
             # Step 6: Start VM
+            progress.update_step("Starting VM")
             self._log_info("  Starting VM...")
             result = start_vm.execute(vm_name=self.vm_name, timeout=self.config.vm_start_timeout)
             self.state_tracker.add_operation("Start VM", result.success, result.message, result.rollback_data)
             if not result.success:
+                progress.finish()
                 self._rollback()
                 return False
             self._log_info(f"  [OK] {result.message}")
+            progress.advance()
 
             # Step 7: Delete rescue disk (only if config allows)
             if self.config.delete_rescue_disk:
+                progress.update_step("Deleting rescue disk")
                 self._log_info(f"  Deleting rescue disk...")
                 result = delete_rescue.execute(disk_name=self.rescue_disk_name)
                 # Note: Don't add to state tracker (can't rollback deletion)
@@ -240,7 +271,9 @@ class RestoreOrchestrator:
                 else:
                     self._log_error(f"  [X] Failed to delete rescue disk: {result.error}")
                     self._log_error("  You can delete it manually later")
+                progress.advance()
 
+            progress.finish()
             return True
 
         except Exception as e:

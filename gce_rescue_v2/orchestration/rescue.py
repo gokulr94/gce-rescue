@@ -27,6 +27,7 @@ from operations import (
 )
 from orchestration.state import StateTracker
 from orchestration.rollback import RollbackHandler
+from utils.progress import create_progress_tracker
 
 
 class RescueOrchestrator:
@@ -163,6 +164,17 @@ class RescueOrchestrator:
             # Get original disk info
             self._get_original_disk_info()
 
+            # Calculate total steps (7 or 8 depending on snapshot)
+            total_steps = 8 if self.config.create_snapshot else 7
+
+            # Create progress tracker
+            progress = create_progress_tracker(
+                total_steps=total_steps,
+                desc=f"Rescue VM: {self.vm_name}",
+                enabled=True  # Can be configured later
+            )
+            progress.start()
+
             # Create operations
             create_snapshot = CreateSnapshotOperation(self.compute, self.project, self.zone, self.logger)
             stop_vm = StopVMOperation(self.compute, self.project, self.zone, self.logger)
@@ -187,6 +199,7 @@ class RescueOrchestrator:
 
             # Step 0: Create safety snapshot (if enabled)
             if self.config.create_snapshot:
+                progress.update_step("Creating safety snapshot")
                 self._log_info("  Creating safety snapshot...")
                 self._log_info("    (This takes 2-5 minutes but ensures data safety)")
                 result = create_snapshot.execute(
@@ -199,6 +212,7 @@ class RescueOrchestrator:
 
                 if not result.success:
                     self._log_error("  Failed to create safety snapshot")
+                    progress.finish()
                     if self.config.require_snapshot:
                         self._log_error("  Snapshot required but failed. Aborting.")
                         return False
@@ -208,17 +222,22 @@ class RescueOrchestrator:
                     snapshot_name = result.rollback_data.get('snapshot_name')
                     self._log_info(f"  [OK] {result.message}")
                     self._log_info(f"    Snapshot: {snapshot_name}")
+                    progress.advance()
 
             # Step 1: Stop VM
+            progress.update_step("Stopping VM")
             self._log_info("  Stopping VM...")
             result = stop_vm.execute(vm_name=self.vm_name, timeout=self.config.vm_stop_timeout)
             self.state_tracker.add_operation("Stop VM", result.success, result.message, result.rollback_data)
             if not result.success:
+                progress.finish()
                 self._rollback()
                 return False
             self._log_info(f"  [OK] {result.message}")
+            progress.advance()
 
             # Step 2: Create rescue disk
+            progress.update_step("Creating rescue disk")
             self._log_info("  Creating rescue disk...")
             result = create_disk.execute(
                 disk_name=rescue_disk_name,
@@ -229,29 +248,38 @@ class RescueOrchestrator:
             )
             self.state_tracker.add_operation("Create Rescue Disk", result.success, result.message, result.rollback_data)
             if not result.success:
+                progress.finish()
                 self._rollback()
                 return False
             self._log_info(f"  [OK] {result.message}")
+            progress.advance()
 
             # Step 3: Detach boot disk
+            progress.update_step("Detaching boot disk")
             self._log_info("  Detaching boot disk...")
             result = detach_boot.execute(vm_name=self.vm_name, device_name=self.original_device_name)
             self.state_tracker.add_operation("Detach Boot Disk", result.success, result.message, result.rollback_data)
             if not result.success:
+                progress.finish()
                 self._rollback()
                 return False
             self._log_info(f"  [OK] {result.message}")
+            progress.advance()
 
             # Step 4: Attach rescue disk as boot
+            progress.update_step("Attaching rescue disk as boot")
             self._log_info("  Attaching rescue disk as boot...")
             result = attach_rescue.execute(vm_name=self.vm_name, disk_name=rescue_disk_name, boot=True)
             self.state_tracker.add_operation("Attach Rescue Disk", result.success, result.message, result.rollback_data)
             if not result.success:
+                progress.finish()
                 self._rollback()
                 return False
             self._log_info(f"  [OK] {result.message}")
+            progress.advance()
 
             # Step 5: Set rescue metadata
+            progress.update_step("Setting rescue metadata")
             self._log_info("  Setting rescue metadata...")
             startup_script = self._generate_startup_script()
             metadata_items = [
@@ -262,30 +290,39 @@ class RescueOrchestrator:
             result = set_metadata.execute(vm_name=self.vm_name, metadata_items=metadata_items)
             self.state_tracker.add_operation("Set Metadata", result.success, result.message, result.rollback_data)
             if not result.success:
+                progress.finish()
                 self._rollback()
                 return False
             self._log_info(f"  [OK] {result.message}")
+            progress.advance()
 
             # Step 6: Start VM in rescue mode
+            progress.update_step("Starting VM in rescue mode")
             self._log_info("  Starting VM in rescue mode...")
             result = start_vm.execute(vm_name=self.vm_name, timeout=self.config.vm_start_timeout)
             self.state_tracker.add_operation("Start VM", result.success, result.message, result.rollback_data)
             if not result.success:
+                progress.finish()
                 self._rollback()
                 return False
             self._log_info(f"  [OK] {result.message}")
+            progress.advance()
 
             # Step 7: Re-attach original disk as secondary
+            progress.update_step("Re-attaching original disk")
             self._log_info("  Re-attaching original disk...")
             time.sleep(10)  # Wait for VM to fully boot
             result = attach_original.execute(vm_name=self.vm_name, disk_name=self.original_disk_name, boot=False)
             self.state_tracker.add_operation("Attach Original Disk", result.success, result.message, result.rollback_data)
             if not result.success:
+                progress.finish()
                 self._rollback()
                 return False
             self._log_info(f"  [OK] {result.message}")
+            progress.advance()
 
             # Success!
+            progress.finish()
             return True
 
         except Exception as e:
